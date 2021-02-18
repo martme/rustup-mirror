@@ -95,12 +95,37 @@ fn main() {
                 .help("Keep how many days of nightly toolchains, e.g. 365")
                 .takes_value(true),
         )
+        .arg(
+            Arg::with_name("t")
+                .short("t")
+                .long("target")
+                .value_name("target")
+                .multiple(true)
+                .help("Restrict downloads to specified host triple[s] to download, e.g. x86_64-pc-linux-gnu")
+        )
+        .arg(
+            Arg::with_name("c")
+                .short("c")
+                .long("channel")
+                .value_name("channel")
+                .multiple(true)
+                .possible_values(&["stable", "beta", "nightly"])
+                .help("Specify what channel[s] to mirror")
+        )
         .get_matches();
 
     let orig_path = args.value_of("orig").unwrap_or("./orig");
     let mirror_path = args.value_of("mirror").unwrap_or("./mirror");
     let mirror_url = args.value_of("url").unwrap_or("http://127.0.0.1:8000");
     let gc_days = args.value_of("gc");
+    let target_filter: Option<HashSet::<&str>> = match args.values_of("t") {
+        Some(targets) => Some(targets.collect()),
+        None => None
+    };
+    let channels: Vec<&str> = match args.values_of("c") {
+        Some(channels) => channels.collect(),
+        None => vec!["stable", "beta", "nightly"]
+    };
 
     let parsed_gc_days = gc_days.map(|e| {
         let parsed_days = e.parse::<i64>().expect("Unable to parse gc days");
@@ -116,7 +141,6 @@ fn main() {
     let mut referenced = HashSet::new();
 
     // Fetch rust components
-    let channels = ["stable", "beta", "nightly"];
     for channel in channels.iter() {
         let name = format!("dist/channel-rust-{}.toml", channel);
         let file_path = download(orig_path, &name).unwrap();
@@ -150,6 +174,12 @@ fn main() {
             let pkg_targets = pkg.get_mut("target").unwrap().as_table_mut().unwrap();
             let targets: Vec<String> = pkg_targets.keys().cloned().collect();
             for target in targets {
+
+                if let Some(selected_targets) = &target_filter {
+                    if !selected_targets.contains(target.as_str()) {
+                        continue
+                    }
+                }
                 let pkg_target = pkg_targets
                     .get_mut(&target)
                     .unwrap()
